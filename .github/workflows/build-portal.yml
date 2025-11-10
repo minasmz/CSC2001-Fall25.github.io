@@ -1,0 +1,36 @@
+name: Build Portal
+on:
+  schedule: [{ cron: "0 2 * * *" }]  # nightly
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate links
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get public repos in org that have a homepageUrl set
+          gh repo list CSC2001-Fall25 --json name,homepageUrl,visibility,description -L 200 \
+          | jq -r '
+            .[]
+            | select(.visibility=="public")
+            | select(.homepageUrl != null and .homepageUrl != "")
+            | "<li><a href=\"" + .homepageUrl + "\">" + .name + "</a></li>"
+          ' > links.html
+      - name: Update index.html
+        run: |
+          awk '
+            /<ul id="portfolio-list">/ { print; print "      " ; while (getline line) { if (line ~ /<\/ul>/) { system("cat links.html"); print line; break } } next }
+            { print }
+          ' index.html > index.tmp && mv index.tmp index.html
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add index.html
+          git commit -m "Update portal links" || echo "No changes"
+          git push
